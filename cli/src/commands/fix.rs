@@ -164,14 +164,14 @@ pub(crate) fn cmd_fix(
 
     // Run the configured tool on all of the chosen inputs.
     // TODO: Support configuration of multiple tools and which files they affect.
-    let tool_command: CommandNameAndArgs = command
-        .settings()
-        .config()
-        .get("fix.tool-command")
-        .map_err(|err| config_error_with_message("Invalid `fix.tool-command`", err))?;
+    //let tool_command: CommandNameAndArgs = command
+    //    .settings()
+    //    .config()
+    //    .get("fix.tool-command")
+    //    .map_err(|err| config_error_with_message("Invalid `fix.tool-command`", err))?;
     let fixed_file_ids = fix_file_ids(
         tx.repo().store().as_ref(),
-        &tool_command,
+        command.settings().config(),
         &unique_tool_inputs,
     )?;
 
@@ -258,9 +258,14 @@ struct ToolInput {
 /// each failed input.
 fn fix_file_ids<'a>(
     store: &Store,
-    tool_command: &CommandNameAndArgs,
+    fix_config: &config::Config,
     tool_inputs: &'a HashSet<ToolInput>,
 ) -> BackendResult<HashMap<&'a ToolInput, FileId>> {
+
+    let tool_command = fix_config
+        .get("fix.tool-command")
+        .map_err(|err| config_error_with_message("Invalid `fix.tool-command`", err))?;
+
     let (updates_tx, updates_rx) = channel();
     // TODO: Switch to futures, or document the decision not to. We don't need
     // threads unless the threads will be doing more than waiting for pipes.
