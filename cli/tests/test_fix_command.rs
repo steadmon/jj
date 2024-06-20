@@ -68,9 +68,13 @@ fn test_fix_complex_config() {
     let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
 
     let content = test_env.jj_cmd_success(&repo_path, &["print", "file.c", "-r", "@"]);
-    insta::assert_snapshot!(content, @"FOO\n");
+    insta::assert_snapshot!(content, @r###"
+    foo
+    "###);
     let content = test_env.jj_cmd_success(&repo_path, &["print", "file.h", "-r", "@"]);
-    insta::assert_snapshot!(content, @"rab\n");
+    insta::assert_snapshot!(content, @r###"
+    bar
+    "###);
     let content = test_env.jj_cmd_success(&repo_path, &["print", "file.rs", "-r", "@"]);
     insta::assert_snapshot!(content, @"yo\n");
 }

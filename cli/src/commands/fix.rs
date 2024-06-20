@@ -20,6 +20,7 @@ use std::sync::mpsc::channel;
 use futures::StreamExt;
 use itertools::Itertools;
 use jj_lib::backend::{BackendError, BackendResult, CommitId, FileId, TreeValue};
+use jj_lib::matchers::Matcher;
 use jj_lib::merged_tree::MergedTreeBuilder;
 use jj_lib::repo::Repo;
 use jj_lib::repo_path::RepoPathBuf;
@@ -164,14 +165,10 @@ pub(crate) fn cmd_fix(
 
     // Run the configured tool on all of the chosen inputs.
     // TODO: Support configuration of multiple tools and which files they affect.
-    //let tool_command: CommandNameAndArgs = command
-    //    .settings()
-    //    .config()
-    //    .get("fix.tool-command")
-    //    .map_err(|err| config_error_with_message("Invalid `fix.tool-command`", err))?;
+    let tools_config = get_tools_config(command.settings().config());
     let fixed_file_ids = fix_file_ids(
         tx.repo().store().as_ref(),
-        command.settings().config(),
+        &tools_config,
         &unique_tool_inputs,
     )?;
 
@@ -258,28 +255,29 @@ struct ToolInput {
 /// each failed input.
 fn fix_file_ids<'a>(
     store: &Store,
-    fix_config: &config::Config,
+    tools_config: &ToolsConfig,
     tool_inputs: &'a HashSet<ToolInput>,
 ) -> BackendResult<HashMap<&'a ToolInput, FileId>> {
-
-    let tool_command = fix_config
-        .get("fix.tool-command")
-        .map_err(|err| config_error_with_message("Invalid `fix.tool-command`", err))?;
-
     let (updates_tx, updates_rx) = channel();
     // TODO: Switch to futures, or document the decision not to. We don't need
     // threads unless the threads will be doing more than waiting for pipes.
     tool_inputs.into_par_iter().try_for_each_init(
         || updates_tx.clone(),
         |updates_tx, tool_input| -> Result<(), BackendError> {
-            let mut read = store.read_file(&tool_input.repo_path, &tool_input.file_id)?;
-            let mut old_content = vec![];
-            read.read_to_end(&mut old_content).unwrap();
-            if let Ok(new_content) = run_tool(tool_command, tool_input, &old_content) {
-                if new_content != *old_content {
-                    let new_file_id =
-                        store.write_file(&tool_input.repo_path, &mut new_content.as_slice())?;
-                    updates_tx.send((tool_input, new_file_id)).unwrap();
+            for tool_config in tools_config.tools.iter() {
+                if tool_config.matcher.matches(&tool_input.repo_path) {
+                    let mut read = store.read_file(&tool_input.repo_path, &tool_input.file_id)?;
+                    let mut old_content = vec![];
+                    read.read_to_end(&mut old_content).unwrap();
+                    if let Ok(new_content) =
+                        run_tool(&tool_config.command, tool_input, &old_content)
+                    {
+                        if new_content != *old_content {
+                            let new_file_id = store
+                                .write_file(&tool_input.repo_path, &mut new_content.as_slice())?;
+                            updates_tx.send((tool_input, new_file_id)).unwrap();
+                        }
+                    }
                 }
             }
             Ok(())
@@ -329,4 +327,51 @@ fn run_tool(
     } else {
         Err(())
     }
+}
+
+struct ToolConfig {
+    name: String,
+    command: CommandNameAndArgs,
+    matcher: Box<dyn Matcher>,
+}
+
+struct ToolsConfig {
+    tools: Vec<ToolConfig>,
+}
+
+fn get_tools_config(config: &config::Config) -> ToolsConfig {
+    let tool_configs = config.get_table("fix").unwrap();
+    ToolsConfig {
+        tools: tool_configs
+            .into_iter()
+            .map(|(key, val)| -> ToolConfig {
+                println!(
+                    "{:?}",
+                    val.into_array().unwrap()[0]
+                        .clone()
+                        .into_table()
+                        .unwrap()
+                        .get("command")
+                );
+                //panic!();
+                let table = val.into_array().unwrap()[0].clone().into_table().unwrap();
+                ToolConfig {
+                    name: key,
+                    command: CommandNameAndArgs::String(
+                        table
+                            .get("command")
+                            .unwrap()
+                            .into_array()
+                            .unwrap()
+                            .into_iter()
+                            .join(" "),
+                    ),
+                    matcher: table.get("patterns").unwrap(),
+                }
+            })
+            .collect_vec(),
+    }
+    // println!("{:?}", _tool_configs);
+    // let foo = ToolsConfig { tools: Vec::new() };
+    // foo
 }
