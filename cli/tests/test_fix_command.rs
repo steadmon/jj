@@ -41,6 +41,41 @@ fn init_with_fake_formatter(args: &[&str]) -> (TestEnvironment, PathBuf) {
 }
 
 #[test]
+fn test_fix_complex_config() {
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+    let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
+    assert!(formatter_path.is_file());
+    let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
+    test_env.add_config(&format!(
+        r###"
+        [[fix.my-tool-1]]
+        command = ["{formatter}", "--uppercase"]
+        patterns = ["*.c"]
+
+        [[fix.my-tool-2]]
+        command = ["{formatter}", "--reverse"]
+        patterns = ["*.h"]
+        "###,
+        formatter=escaped_formatter_path.as_str()
+    ));
+
+    std::fs::write(repo_path.join("file.c"), "foo\n").unwrap();
+    std::fs::write(repo_path.join("file.h"), "bar\n").unwrap();
+    std::fs::write(repo_path.join("file.rs"), "yo\n").unwrap();
+
+    let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.c", "-r", "@"]);
+    insta::assert_snapshot!(content, @"FOO\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.h", "-r", "@"]);
+    insta::assert_snapshot!(content, @"rab\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.rs", "-r", "@"]);
+    insta::assert_snapshot!(content, @"yo\n");
+}
+
+#[test]
 fn test_fix_no_config() {
     let test_env = TestEnvironment::default();
     test_env.jj_cmd_ok(test_env.env_root(), &["init", "repo", "--git"]);
