@@ -265,21 +265,35 @@ fn fix_file_ids<'a>(
     tool_inputs.into_par_iter().try_for_each_init(
         || updates_tx.clone(),
         |updates_tx, tool_input| -> Result<(), BackendError> {
+            let mut new_file_id: Option<FileId> = None;
+            let mut prev_content: Option<Vec<u8>> = None;
             for tool_config in tools_config.tools.iter() {
                 if tool_config.matcher.matches(&tool_input.repo_path) {
-                    let mut read = store.read_file(&tool_input.repo_path, &tool_input.file_id)?;
-                    let mut old_content = vec![];
-                    read.read_to_end(&mut old_content).unwrap();
-                    if let Ok(new_content) =
-                        run_tool(&tool_config.command, tool_input, &old_content)
-                    {
-                        if new_content != *old_content {
-                            let new_file_id = store
-                                .write_file(&tool_input.repo_path, &mut new_content.as_slice())?;
-                            updates_tx.send((tool_input, new_file_id)).unwrap();
+                    if prev_content.is_none() {
+                        let mut content = vec![];
+                        let mut read =
+                            store.read_file(&tool_input.repo_path, &tool_input.file_id)?;
+                        read.read_to_end(&mut content).unwrap();
+                        prev_content = Some(content);
+                    }
+                    if let Ok(next_content) = run_tool(
+                        &tool_config.command,
+                        tool_input,
+                        prev_content.as_ref().unwrap(),
+                    ) {
+                        if next_content != *prev_content.as_ref().unwrap() {
+                            new_file_id =
+                                Some(store.write_file(
+                                    &tool_input.repo_path,
+                                    &mut next_content.as_slice(),
+                                )?);
+                            prev_content = Some(next_content);
                         }
                     }
                 }
+            }
+            if let Some(new_file_id) = new_file_id {
+                updates_tx.send((tool_input, new_file_id)).unwrap();
             }
             Ok(())
         },
@@ -381,7 +395,7 @@ fn get_tools_config(
                             .join(" "), //todo: put it closer to CommandNameAndArgs
                     ),
                     matcher: workspace_command
-                        .parse_file_patterns(&patterns)?
+                        .parse_union_filesets(&patterns)?
                         .to_matcher(),
                 })
             })

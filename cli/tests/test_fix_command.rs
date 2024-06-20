@@ -41,6 +41,79 @@ fn init_with_fake_formatter(args: &[&str]) -> (TestEnvironment, PathBuf) {
 }
 
 #[test]
+fn test_config_both_missing() {
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+
+    std::fs::write(repo_path.join("file"), "content\n").unwrap();
+    let stderr = test_env.jj_cmd_failure(&repo_path, &["fix"]);
+    insta::assert_snapshot!(stderr, @r###"
+    Config error: At least one entry of `fix.tools` or `fix.tool-command` is required.
+    For help, see https://github.com/martinvonz/jj/blob/main/docs/config.md.
+    "###);
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "file", "-r", "@"]);
+    insta::assert_snapshot!(content, @"content\n");
+}
+
+#[test]
+fn test_config_both_present() {
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+
+    let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
+    assert!(formatter_path.is_file());
+    let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
+    //todo: test globs
+    test_env.add_config(&format!(
+        r###"
+        [fix]
+        tool-command = ["{formatter}", "--uppercase"]
+
+        [[fix.tools.my-tool-1]]
+        command = ["{formatter}", "--reverse"]
+        patterns = ["tables-file"]
+        "###,
+        formatter = escaped_formatter_path.as_str()
+    ));
+
+    std::fs::write(repo_path.join("legacy-file"), "legacy content\n").unwrap();
+    std::fs::write(repo_path.join("tables-file"), "tables content\n").unwrap();
+
+    let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "legacy-file", "-r", "@"]);
+    insta::assert_snapshot!(content, @"LEGACY CONTENT\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "tables-file", "-r", "@"]);
+    insta::assert_snapshot!(content, @"TNETNOC SELBAT\n");
+}
+
+#[test]
+fn test_config_only_legacy() {}
+
+#[test]
+fn test_config_only_tables() {}
+
+#[test]
+fn test_config_tables_overlapping_patterns() {}
+
+#[test]
+fn test_config_tables_all_commands_missing() {}
+
+#[test]
+fn test_config_tables_some_commands_missing() {}
+
+#[test]
+fn test_config_tables_empty_patterns_list() {}
+
+#[test]
+fn test_config_filesets() {
+    // patterns = ["glob:\"fo*\""]
+}
+
+#[test]
 fn test_fix_complex_config() {
     let test_env = TestEnvironment::default();
     test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
@@ -74,18 +147,6 @@ fn test_fix_complex_config() {
     insta::assert_snapshot!(content, @"rab\n");
     let content = test_env.jj_cmd_success(&repo_path, &["print", "baz", "-r", "@"]);
     insta::assert_snapshot!(content, @"baz\n");
-}
-
-#[test]
-fn test_fix_no_config() {
-    let test_env = TestEnvironment::default();
-    test_env.jj_cmd_ok(test_env.env_root(), &["init", "repo", "--git"]);
-    let repo_path = test_env.env_root().join("repo");
-    let stderr = test_env.jj_cmd_failure(&repo_path, &["fix", "-s", "@"]);
-    insta::assert_snapshot!(stderr, @r###"
-    Config error: At least one entry of `fix.tools` or `fix.tool-command` is required.
-    For help, see https://github.com/martinvonz/jj/blob/main/docs/config.md.
-    "###);
 }
 
 #[test]
