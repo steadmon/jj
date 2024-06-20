@@ -17,6 +17,7 @@ use std::io::Write;
 use std::process::Stdio;
 use std::sync::mpsc::channel;
 
+use config::ConfigError;
 use futures::StreamExt;
 use itertools::Itertools;
 use jj_lib::backend::{BackendError, BackendResult, CommitId, FileId, TreeValue};
@@ -31,8 +32,8 @@ use rayon::iter::IntoParallelIterator;
 use rayon::prelude::ParallelIterator;
 use tracing::instrument;
 
-use crate::cli_util::{CommandHelper, RevisionArg};
-use crate::command_error::{config_error_with_message, CommandError};
+use crate::cli_util::{CommandHelper, RevisionArg, WorkspaceCommandHelper};
+use crate::command_error::CommandError;
 use crate::config::CommandNameAndArgs;
 use crate::ui::Ui;
 
@@ -81,6 +82,7 @@ pub(crate) fn cmd_fix(
     args: &FixArgs,
 ) -> Result<(), CommandError> {
     let mut workspace_command = command.workspace_helper(ui)?;
+    let tools_config = get_tools_config(&workspace_command, command.settings().config())?;
     let root_commits: Vec<CommitId> = workspace_command
         .parse_union_revsets(if args.source.is_empty() {
             &[RevisionArg::AT]
@@ -165,7 +167,6 @@ pub(crate) fn cmd_fix(
 
     // Run the configured tool on all of the chosen inputs.
     // TODO: Support configuration of multiple tools and which files they affect.
-    let tools_config = get_tools_config(command.settings().config());
     let fixed_file_ids = fix_file_ids(
         tx.repo().store().as_ref(),
         &tools_config,
@@ -339,39 +340,38 @@ struct ToolsConfig {
     tools: Vec<ToolConfig>,
 }
 
-fn get_tools_config(config: &config::Config) -> ToolsConfig {
-    let tool_configs = config.get_table("fix").unwrap();
-    ToolsConfig {
+fn get_tools_config(
+    workspace_command: &WorkspaceCommandHelper,
+    config: &config::Config,
+) -> Result<ToolsConfig, CommandError> {
+    let tool_configs = config.get_table("fix")?;
+    Ok(ToolsConfig {
         tools: tool_configs
             .into_iter()
-            .map(|(key, val)| -> ToolConfig {
-                println!(
-                    "{:?}",
-                    val.into_array().unwrap()[0]
-                        .clone()
-                        .into_table()
-                        .unwrap()
-                        .get("command")
-                );
-                //panic!();
-                let table = val.into_array().unwrap()[0].clone().into_table().unwrap();
-                ToolConfig {
+            .map(|(key, val)| -> Result<ToolConfig, CommandError> {
+                let table = val.into_array()?[0].clone().into_table()?;
+                let x: Vec<String> = table
+                    .get("patterns")
+                    .ok_or(config::ConfigError::NotFound("todo".to_string()))?
+                    .clone()
+                    .into_array()?
+                    .into_iter()
+                    .map(|value| -> Result<String, ConfigError> { value.into_string() })
+                    .try_collect()?;
+                Ok(ToolConfig {
                     name: key,
                     command: CommandNameAndArgs::String(
                         table
                             .get("command")
-                            .unwrap()
-                            .into_array()
-                            .unwrap()
+                            .ok_or(config::ConfigError::NotFound("todo".to_string()))?
+                            .clone()
+                            .into_array()?
                             .into_iter()
-                            .join(" "),
+                            .join(" "), //todo: put it closer to CommandNameAndArgs
                     ),
-                    matcher: table.get("patterns").unwrap(),
-                }
+                    matcher: workspace_command.parse_file_patterns(&x)?.to_matcher(),
+                })
             })
-            .collect_vec(),
-    }
-    // println!("{:?}", _tool_configs);
-    // let foo = ToolsConfig { tools: Vec::new() };
-    // foo
+            .try_collect()?,
+    })
 }

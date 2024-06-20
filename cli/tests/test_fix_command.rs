@@ -48,35 +48,32 @@ fn test_fix_complex_config() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
+    //todo: test globs
     test_env.add_config(&format!(
         r###"
         [[fix.my-tool-1]]
         command = ["{formatter}", "--uppercase"]
-        patterns = ["*.c"]
+        patterns = ["foo"]
 
         [[fix.my-tool-2]]
         command = ["{formatter}", "--reverse"]
-        patterns = ["*.h"]
+        patterns = ["bar"]
         "###,
-        formatter=escaped_formatter_path.as_str()
+        formatter = escaped_formatter_path.as_str()
     ));
 
-    std::fs::write(repo_path.join("file.c"), "foo\n").unwrap();
-    std::fs::write(repo_path.join("file.h"), "bar\n").unwrap();
-    std::fs::write(repo_path.join("file.rs"), "yo\n").unwrap();
+    std::fs::write(repo_path.join("foo"), "foo\n").unwrap();
+    std::fs::write(repo_path.join("bar"), "bar\n").unwrap();
+    std::fs::write(repo_path.join("baz"), "baz\n").unwrap();
 
     let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
 
-    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.c", "-r", "@"]);
-    insta::assert_snapshot!(content, @r###"
-    foo
-    "###);
-    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.h", "-r", "@"]);
-    insta::assert_snapshot!(content, @r###"
-    bar
-    "###);
-    let content = test_env.jj_cmd_success(&repo_path, &["print", "file.rs", "-r", "@"]);
-    insta::assert_snapshot!(content, @"yo\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "foo", "-r", "@"]);
+    insta::assert_snapshot!(content, @"FOO\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "bar", "-r", "@"]);
+    insta::assert_snapshot!(content, @"rab\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "baz", "-r", "@"]);
+    insta::assert_snapshot!(content, @"baz\n");
 }
 
 #[test]
