@@ -51,11 +51,11 @@ fn test_fix_complex_config() {
     //todo: test globs
     test_env.add_config(&format!(
         r###"
-        [[fix.my-tool-1]]
+        [[fix.tools.my-tool-1]]
         command = ["{formatter}", "--uppercase"]
         patterns = ["foo"]
 
-        [[fix.my-tool-2]]
+        [[fix.tools.my-tool-2]]
         command = ["{formatter}", "--reverse"]
         patterns = ["bar"]
         "###,
@@ -83,8 +83,7 @@ fn test_fix_no_config() {
     let repo_path = test_env.env_root().join("repo");
     let stderr = test_env.jj_cmd_failure(&repo_path, &["fix", "-s", "@"]);
     insta::assert_snapshot!(stderr, @r###"
-    Config error: Invalid `fix.tool-command`
-    Caused by: configuration property "fix.tool-command" not found
+    Config error: At least one entry of `fix.tools` or `fix.tool-command` is required.
     For help, see https://github.com/martinvonz/jj/blob/main/docs/config.md.
     "###);
 }

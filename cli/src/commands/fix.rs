@@ -21,7 +21,7 @@ use config::ConfigError;
 use futures::StreamExt;
 use itertools::Itertools;
 use jj_lib::backend::{BackendError, BackendResult, CommitId, FileId, TreeValue};
-use jj_lib::matchers::Matcher;
+use jj_lib::matchers::{EverythingMatcher, Matcher};
 use jj_lib::merged_tree::MergedTreeBuilder;
 use jj_lib::repo::Repo;
 use jj_lib::repo_path::RepoPathBuf;
@@ -331,7 +331,6 @@ fn run_tool(
 }
 
 struct ToolConfig {
-    name: String,
     command: CommandNameAndArgs,
     matcher: Box<dyn Matcher>,
 }
@@ -344,34 +343,57 @@ fn get_tools_config(
     workspace_command: &WorkspaceCommandHelper,
     config: &config::Config,
 ) -> Result<ToolsConfig, CommandError> {
-    let tool_configs = config.get_table("fix")?;
-    Ok(ToolsConfig {
-        tools: tool_configs
+    // todo fix these names, they're terrible
+    let mut tools_config = ToolsConfig { tools: Vec::new() };
+    if let Ok(tool_command) = config.get("fix.tool-command") {
+        tools_config.tools.push(ToolConfig {
+            command: tool_command,
+            matcher: Box::new(EverythingMatcher),
+        });
+    }
+    if let Ok(tool_configs) = config.get_table("fix.tools") {
+        let mut tool_configs: Vec<ToolConfig> = tool_configs
             .into_iter()
             .map(|(key, val)| -> Result<ToolConfig, CommandError> {
                 let table = val.into_array()?[0].clone().into_table()?;
-                let x: Vec<String> = table
+                let patterns: Vec<String> = table
                     .get("patterns")
-                    .ok_or(config::ConfigError::NotFound("todo".to_string()))?
+                    .ok_or(config::ConfigError::NotFound(format!(
+                        "tools.{}.patterns",
+                        key
+                    )))?
                     .clone()
                     .into_array()?
                     .into_iter()
                     .map(|value| -> Result<String, ConfigError> { value.into_string() })
                     .try_collect()?;
                 Ok(ToolConfig {
-                    name: key,
                     command: CommandNameAndArgs::String(
                         table
                             .get("command")
-                            .ok_or(config::ConfigError::NotFound("todo".to_string()))?
+                            .ok_or(config::ConfigError::NotFound(format!(
+                                "tools.{}.command",
+                                key
+                            )))?
                             .clone()
                             .into_array()?
                             .into_iter()
                             .join(" "), //todo: put it closer to CommandNameAndArgs
                     ),
-                    matcher: workspace_command.parse_file_patterns(&x)?.to_matcher(),
+                    matcher: workspace_command
+                        .parse_file_patterns(&patterns)?
+                        .to_matcher(),
                 })
             })
-            .try_collect()?,
-    })
+            .try_collect()?;
+        tools_config.tools.append(&mut tool_configs);
+    }
+    if tools_config.tools.is_empty() {
+        Err(config::ConfigError::Message(
+            "At least one entry of `fix.tools` or `fix.tool-command` is required.".to_string(),
+        )
+        .into())
+    } else {
+        Ok(tools_config)
+    }
 }
