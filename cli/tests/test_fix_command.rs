@@ -66,14 +66,15 @@ fn test_config_both_present() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
-    //todo: test globs
+    //todo: document the order in which they're applied (in more than just the
+    // test)
     test_env.add_config(&format!(
         r###"
         [fix]
-        tool-command = ["{formatter}", "--uppercase"]
+        tool-command = ["{formatter}", "--append", "legacy change"]
 
         [[fix.tools.my-tool-1]]
-        command = ["{formatter}", "--reverse"]
+        command = ["{formatter}", "--append", "tables change"]
         patterns = ["tables-file"]
         "###,
         formatter = escaped_formatter_path.as_str()
@@ -85,9 +86,16 @@ fn test_config_both_present() {
     let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
 
     let content = test_env.jj_cmd_success(&repo_path, &["print", "legacy-file", "-r", "@"]);
-    insta::assert_snapshot!(content, @"LEGACY CONTENT\n");
+    insta::assert_snapshot!(content, @r###"
+    legacy content
+    legacy change
+    "###);
     let content = test_env.jj_cmd_success(&repo_path, &["print", "tables-file", "-r", "@"]);
-    insta::assert_snapshot!(content, @"TNETNOC SELBAT\n");
+    insta::assert_snapshot!(content, @r###"
+    tables content
+    legacy change
+    tables change
+    "###);
 }
 
 #[test]

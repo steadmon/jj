@@ -44,6 +44,10 @@ struct Args {
     #[arg(long, default_value_t = false)]
     uppercase: bool,
 
+    /// Adds a line to the end of the file
+    #[arg(long)]
+    append: Option<String>,
+
     /// Write this string to stdout, and ignore stdin.
     #[arg(long)]
     stdout: Option<String>,
@@ -64,9 +68,9 @@ fn main() -> ExitCode {
         eprint!("{}", data);
     }
     let stdout = if let Some(data) = args.stdout {
-        data // --reverse doesn't apply to --stdout.
+        data // --reverse and --append don't apply to --stdout.
     } else {
-        std::io::stdin()
+        let mut stdout = std::io::stdin()
             .lines()
             .map(|line| {
                 format!("{}\n", {
@@ -82,7 +86,11 @@ fn main() -> ExitCode {
                     }
                 })
             })
-            .join("")
+            .join("");
+        if let Some(line) = args.append {
+            stdout.push_str(&line);
+        }
+        stdout
     };
     print!("{}", stdout);
     if let Some(path) = args.tee {

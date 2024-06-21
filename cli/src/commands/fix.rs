@@ -34,7 +34,7 @@ use tracing::instrument;
 
 use crate::cli_util::{CommandHelper, RevisionArg, WorkspaceCommandHelper};
 use crate::command_error::CommandError;
-use crate::config::CommandNameAndArgs;
+use crate::config::{CommandNameAndArgs, NonEmptyCommandArgsVec};
 use crate::ui::Ui;
 
 /// Update files with formatting fixes or other changes
@@ -380,19 +380,25 @@ fn get_tools_config(
                     .into_array()?
                     .into_iter()
                     .map(|value| -> Result<String, ConfigError> { value.into_string() })
-                    .try_collect()?;
+                    .try_collect()?; // todo test empty patterns list
                 Ok(ToolConfig {
-                    command: CommandNameAndArgs::String(
-                        table
-                            .get("command")
-                            .ok_or(config::ConfigError::NotFound(format!(
-                                "tools.{}.command",
-                                key
-                            )))?
-                            .clone()
-                            .into_array()?
-                            .into_iter()
-                            .join(" "), //todo: put it closer to CommandNameAndArgs
+                    command: CommandNameAndArgs::Vec(
+                        NonEmptyCommandArgsVec::try_from(
+                            table
+                                .get("command")
+                                .ok_or(config::ConfigError::NotFound(format!(
+                                    "tools.{}.command",
+                                    key
+                                )))?
+                                .clone()
+                                .into_array()?
+                                .iter()
+                                .map(|value| value.to_string())
+                                .collect_vec(),
+                        )
+                        .map_err(|e| {
+                            config::ConfigError::Message(format!("{}: tools.{}.command", e, key))
+                        })?,
                     ),
                     matcher: workspace_command
                         .parse_union_filesets(&patterns)?
