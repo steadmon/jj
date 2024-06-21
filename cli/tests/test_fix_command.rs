@@ -108,7 +108,31 @@ fn test_config_only_tables() {}
 fn test_config_tables_overlapping_patterns() {}
 
 #[test]
-fn test_config_tables_all_commands_missing() {}
+fn test_config_tables_all_commands_missing() {
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+    test_env.add_config(&format!(
+        r###"
+        [fix.tools.my-tool-missing-command-1]
+        patterns = ["foo"]
+
+        [fix.tools.my-tool-missing-command-2]
+        patterns = ['glob:"ba*"']
+        "###,
+    ));
+
+    let stderr = test_env.jj_cmd_failure(&repo_path, &["fix"]);
+    insta::assert_snapshot!(stderr, @r###"
+    Config error: configuration property "tools.my-tool-missing-command-1.command" not found
+    For help, see https://github.com/martinvonz/jj/blob/main/docs/config.md.
+    "###);
+
+    std::fs::write(repo_path.join("foo"), "foo\n").unwrap();
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "foo", "-r", "@"]);
+    insta::assert_snapshot!(content, @"foo\n");
+}
 
 #[test]
 fn test_config_tables_some_commands_missing() {
@@ -118,7 +142,6 @@ fn test_config_tables_some_commands_missing() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
-    //todo: test globs
     test_env.add_config(&format!(
         r###"
         [fix.tools.my-tool-1]
@@ -151,7 +174,6 @@ fn test_config_tables_empty_patterns_list() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
-    //todo: test globs
     test_env.add_config(&format!(
         r###"
         [fix.tools.my-tool-empty-pattern]
@@ -177,7 +199,6 @@ fn test_config_filesets() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
-    //todo: test globs
     test_env.add_config(&format!(
         r###"
         [fix.tools.my-tool-match-one]
@@ -217,7 +238,6 @@ fn test_fix_complex_config() {
     let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
     assert!(formatter_path.is_file());
     let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
-    //todo: test globs
     test_env.add_config(&format!(
         r###"
         [fix.tools.my-tool-1]
