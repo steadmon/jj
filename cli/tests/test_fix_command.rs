@@ -114,7 +114,30 @@ fn test_config_tables_all_commands_missing() {}
 fn test_config_tables_some_commands_missing() {}
 
 #[test]
-fn test_config_tables_empty_patterns_list() {}
+fn test_config_tables_empty_patterns_list() {
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+    let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
+    assert!(formatter_path.is_file());
+    let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
+    //todo: test globs
+    test_env.add_config(&format!(
+        r###"
+        [fix.tools.my-tool-empty-pattern]
+        command = ["{formatter}", "--uppercase"]
+        patterns = []
+        "###,
+        formatter = escaped_formatter_path.as_str()
+    ));
+
+    std::fs::write(repo_path.join("foo"), "foo\n").unwrap();
+
+    let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "foo", "-r", "@"]);
+    insta::assert_snapshot!(content, @"foo\n");
+}
 
 #[test]
 fn test_config_filesets() {
