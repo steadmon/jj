@@ -118,7 +118,42 @@ fn test_config_tables_empty_patterns_list() {}
 
 #[test]
 fn test_config_filesets() {
-    // patterns = ["glob:\"fo*\""]
+    let test_env = TestEnvironment::default();
+    test_env.jj_cmd_ok(test_env.env_root(), &["git", "init", "repo"]);
+    let repo_path = test_env.env_root().join("repo");
+    let formatter_path = assert_cmd::cargo::cargo_bin("fake-formatter");
+    assert!(formatter_path.is_file());
+    let escaped_formatter_path = formatter_path.to_str().unwrap().replace('\\', r"\\");
+    //todo: test globs
+    test_env.add_config(&format!(
+        r###"
+        [fix.tools.my-tool-match-one]
+        command = ["{formatter}", "--uppercase"]
+        patterns = ['glob:"fo*"']
+
+        [fix.tools.my-tool-match-two]
+        command = ["{formatter}", "--reverse"]
+        patterns = ['glob:"ba*"']
+
+        [fix.tools.my-tool-match-none]
+        command = ["{formatter}", "--append", "SHOULD NOT APPEAR"]
+        patterns = ['glob:"this-doesnt-match-anything-*"']
+        "###,
+        formatter = escaped_formatter_path.as_str()
+    ));
+
+    std::fs::write(repo_path.join("foo"), "foo\n").unwrap();
+    std::fs::write(repo_path.join("bar"), "bar\n").unwrap();
+    std::fs::write(repo_path.join("baz"), "baz\n").unwrap();
+
+    let (_stdout, _stderr) = test_env.jj_cmd_ok(&repo_path, &["fix"]);
+
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "foo", "-r", "@"]);
+    insta::assert_snapshot!(content, @"FOO\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "bar", "-r", "@"]);
+    insta::assert_snapshot!(content, @"rab\n");
+    let content = test_env.jj_cmd_success(&repo_path, &["print", "baz", "-r", "@"]);
+    insta::assert_snapshot!(content, @"zab\n");
 }
 
 #[test]
