@@ -73,7 +73,7 @@ fn test_config_both_present() {
         [fix]
         tool-command = ["{formatter}", "--append", "legacy change"]
 
-        [[fix.tools.my-tool-1]]
+        [fix.tools.my-tool-1]
         command = ["{formatter}", "--append", "tables change"]
         patterns = ["tables-file"]
         "###,
@@ -132,11 +132,11 @@ fn test_fix_complex_config() {
     //todo: test globs
     test_env.add_config(&format!(
         r###"
-        [[fix.tools.my-tool-1]]
+        [fix.tools.my-tool-1]
         command = ["{formatter}", "--uppercase"]
         patterns = ["foo"]
 
-        [[fix.tools.my-tool-2]]
+        [fix.tools.my-tool-2]
         command = ["{formatter}", "--reverse"]
         patterns = ["bar"]
         "###,

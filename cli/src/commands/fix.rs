@@ -369,7 +369,7 @@ fn get_tools_config(
         let mut tool_configs: Vec<ToolConfig> = tool_configs
             .into_iter()
             .map(|(key, val)| -> Result<ToolConfig, CommandError> {
-                let table = val.into_array()?[0].clone().into_table()?;
+                let table = val.into_table()?;
                 let patterns: Vec<String> = table
                     .get("patterns")
                     .ok_or(config::ConfigError::NotFound(format!(
