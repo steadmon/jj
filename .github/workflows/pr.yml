@@ -29,16 +29,16 @@ jobs:
             // Ensure commit subject lines are in the form `area or areas: description`.
             const subjectLineFormat = /^.+:\s.+$/;
             const badCommits = commits
-              .map(c => [c.sha.slice(0, 8), c.commit.message.split('\n')[0]])
+              .map(c => [c.sha.slice(0, 7), c.commit.message.split('\n')[0]])
               .filter(([_, s]) => !subjectLineFormat.test(s))
               .map(([sha, title]) => `- ${sha}: ${title}`);
 
             if (badCommits.length > 0) {
-              // One or more commits are bad. Make sure changes are requested.
+              // One or more commits are bad. Fail the workflow.
               const body = 'The following commits do not follow our format for subject lines:\n\n'
                 + `${badCommits.join('\n')}\n\nCommits should have a subject line following the `
-                + 'format `<topic>: <description>`. Please review the [commit guidelines]'
-                + '(https://jj-vcs.github.io/jj/prerelease/contributing/#commit-guidelines) for '
+                + 'format `<topic>: <description>`.\nPlease review the commit guidelines '
+                + '(https://docs.jj-vcs.dev/prerelease/contributing/#commit-guidelines) for '
                 + 'more information.';
 
               await core.summary
